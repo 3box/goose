@@ -650,6 +650,9 @@ pub(crate) async fn manager_main(mut goose_attack: GooseAttack) -> GooseAttack {
     // Run any configured test_stop() functions.
     goose_attack.run_test_stop().await.unwrap();
 
+    // Mark manager metrics as final.
+    goose_attack.metrics.final_metrics = true;
+
     goose_attack
 }
 
