@@ -145,8 +145,7 @@ pub(crate) async fn worker_main(goose_attack: GooseAttack) -> GooseAttack {
                 Url::parse(
                     initializer
                         .base_url
-                        .unwrap_or(goose_attack.configuration.host.clone())
-                        .as_str(),
+                        .unwrap_or(goose_attack.configuration.host.as_str()),
                 )
                 .unwrap(),
             ),
