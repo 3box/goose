@@ -1105,11 +1105,6 @@ impl GooseAttack {
     // Create and schedule GooseUsers. This requires that the host that will be load tested
     // has been configured.
     fn prepare_load_test(&mut self) -> Result<(), GooseError> {
-        // If not on a Worker, be sure a valid host has been defined before building configuration.
-        if self.attack_mode != AttackMode::Worker {
-            self.validate_host()?;
-        }
-
         // Apply weights to transactions in each scenario.
         for scenario in &mut self.scenarios {
             let (

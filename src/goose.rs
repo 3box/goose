@@ -757,7 +757,7 @@ pub struct GaggleUser {
     /// vector, indicating which [`Scenario`](./struct.Scenario.html) is running.
     pub scenarios_index: usize,
     /// The base URL to prepend to all relative paths.
-    pub base_url: Arc<RwLock<Url>>,
+    pub base_url: Option<Url>,
     /// A local copy of the global GooseConfiguration.
     pub config: GooseConfiguration,
     /// Load test hash.
@@ -767,14 +767,14 @@ impl GaggleUser {
     /// Create a new user state.
     pub fn new(
         scenarios_index: usize,
-        base_url: Url,
+        base_url: Option<Url>,
         configuration: &GooseConfiguration,
         load_test_hash: u64,
     ) -> Self {
         trace!("new gaggle user");
         GaggleUser {
             scenarios_index,
-            base_url: Arc::new(RwLock::new(base_url)),
+            base_url,
             config: configuration.clone(),
             load_test_hash,
         }
@@ -860,7 +860,7 @@ pub struct GooseUser {
     /// Client used to make requests, managing sessions and cookies.
     pub client: Client,
     /// The base URL to prepend to all relative paths.
-    pub base_url: Url,
+    pub base_url: Option<Url>,
     /// A local copy of the global [`GooseConfiguration`](../struct.GooseConfiguration.html).
     pub config: GooseConfiguration,
     /// Channel to logger.
@@ -895,7 +895,7 @@ impl GooseUser {
     /// Create a new user state.
     pub fn new(
         scenarios_index: usize,
-        base_url: Url,
+        base_url: Option<Url>,
         configuration: &GooseConfiguration,
         load_test_hash: u64,
     ) -> Result<Self, GooseError> {
@@ -942,7 +942,10 @@ impl GooseUser {
     }
 
     /// Create a new single-use user.
-    pub fn single(base_url: Url, configuration: &GooseConfiguration) -> Result<Self, GooseError> {
+    pub fn single(
+        base_url: Option<Url>,
+        configuration: &GooseConfiguration,
+    ) -> Result<Self, GooseError> {
         let mut single_user = GooseUser::new(0, base_url, configuration, 0)?;
         // Only one user, so index is 0.
         single_user.weighted_users_index = 0;
@@ -1128,7 +1131,7 @@ impl GooseUser {
         }
 
         // Otherwise use the `base_url`.
-        Ok(self.base_url.join(path)?.to_string())
+        Ok(self.base_url.as_ref().unwrap().join(path)?.to_string())
     }
 
     /// A helper to make a `GET` request of a path and collect relevant metrics.
@@ -1618,7 +1621,7 @@ impl GooseUser {
 
                 // Load test user was redirected.
                 if self.config.sticky_follow && request_metric.raw.url != request_metric.final_url {
-                    let base_url = self.base_url.to_string();
+                    let base_url = self.base_url.as_ref().unwrap().to_string();
                     // Check if the URL redirected started with the load test base_url.
                     if !request_metric.final_url.starts_with(&base_url) {
                         let redirected_url = Url::parse(&request_metric.final_url)?;
@@ -2294,7 +2297,7 @@ impl GooseUser {
     /// }
     /// ```
     pub fn set_base_url(&mut self, host: &str) -> Result<(), TransactionError> {
-        self.base_url = Url::parse(host)?;
+        self.base_url = Some(Url::parse(host)?);
         Ok(())
     }
 }
@@ -2651,39 +2654,41 @@ pub fn get_base_url(
     config_host: Option<String>,
     scenario_host: Option<String>,
     default_host: Option<String>,
-) -> Result<Url, GooseError> {
+) -> Result<Option<Url>, GooseError> {
     // If the `--host` CLI option is set, build the URL with it.
     match config_host {
-        Some(host) => Ok(
-            Url::parse(&host).map_err(|parse_error| GooseError::InvalidHost {
+        Some(host) => Ok(Some(Url::parse(&host).map_err(|parse_error| {
+            GooseError::InvalidHost {
                 host,
                 detail: "There was a failure parsing the host specified with --host.".to_string(),
                 parse_error,
-            })?,
-        ),
+            }
+        })?)),
         None => {
             match scenario_host {
                 // Otherwise, if `Scenario.host` is defined, usee this
                 Some(host) => {
                     Ok(
-                        Url::parse(&host).map_err(|parse_error| GooseError::InvalidHost {
+                        Some(Url::parse(&host).map_err(|parse_error| GooseError::InvalidHost {
                             host,
                             detail: "There was a failure parsing the host specified with the Scenario.set_host() function.".to_string(),
                             parse_error,
-                        })?,
+                        })?),
                     )
                 }
-                // Otherwise, use global `GooseAttack.host`. `unwrap` okay as host validation was done at startup.
+                // Otherwise, use global `GooseAttack.host`
                 None => {
-                    // Host is required, if we get here it's safe to unwrap this variable.
-                    let default_host = default_host.unwrap();
-                    Ok(
-                        Url::parse(&default_host).map_err(|parse_error| GooseError::InvalidHost {
-                            host: default_host.to_string(),
-                            detail: "There was a failure parsing the host specified globally with the GooseAttack.set_default() function.".to_string(),
-                            parse_error,
-                        })?,
-                    )
+                    if let Some(default_host) = default_host {
+                        Ok(
+                            Some(Url::parse(&default_host).map_err(|parse_error| GooseError::InvalidHost {
+                                host: default_host.to_string(),
+                                detail: "There was a failure parsing the host specified globally with the GooseAttack.set_default() function.".to_string(),
+                                parse_error,
+                            })?),
+                        )
+                    } else {
+                        Ok(None)
+                    }
                 }
             }
         }
@@ -2972,8 +2977,8 @@ mod tests {
     fn setup_user(server: &MockServer) -> Result<GooseUser, GooseError> {
         let mut configuration = GooseConfiguration::parse_args_default(&EMPTY_ARGS).unwrap();
         configuration.co_mitigation = Some(GooseCoordinatedOmissionMitigation::Average);
-        let base_url = get_base_url(Some(server.url("/")), None, None).unwrap();
-        GooseUser::single(base_url, &configuration)
+        let base_url = get_base_url(Some(server.url("/")), None, None)?.unwrap();
+        GooseUser::single(Some(base_url), &configuration)
     }
 
     #[test]
@@ -3163,8 +3168,10 @@ mod tests {
     async fn goose_user() {
         const HOST: &str = "http://example.com/";
         let configuration = GooseConfiguration::parse_args_default(&EMPTY_ARGS).unwrap();
-        let base_url = get_base_url(Some(HOST.to_string()), None, None).unwrap();
-        let user = GooseUser::new(0, base_url, &configuration, 0).unwrap();
+        let base_url = get_base_url(Some(HOST.to_string()), None, None)
+            .unwrap()
+            .unwrap();
+        let user = GooseUser::new(0, Some(base_url), &configuration, 0).unwrap();
         assert_eq!(user.scenarios_index, 0);
         assert_eq!(user.weighted_users_index, usize::max_value());
 
@@ -3190,8 +3197,9 @@ mod tests {
             Some("http://www2.example.com/".to_string()),
             Some("http://www.example.com/".to_string()),
         )
+        .unwrap()
         .unwrap();
-        let user2 = GooseUser::new(0, base_url, &configuration, 0).unwrap();
+        let user2 = GooseUser::new(0, Some(base_url), &configuration, 0).unwrap();
 
         // Confirm the URLs are correctly built using the scenario_host.
         let url = user2.build_url("/foo").unwrap();
@@ -3203,8 +3211,10 @@ mod tests {
 
         // Confirm Goose can build a base_url that includes a path.
         const HOST_WITH_PATH: &str = "http://example.com/with/path/";
-        let base_url = get_base_url(Some(HOST_WITH_PATH.to_string()), None, None).unwrap();
-        let user = GooseUser::new(0, base_url, &configuration, 0).unwrap();
+        let base_url = get_base_url(Some(HOST_WITH_PATH.to_string()), None, None)
+            .unwrap()
+            .unwrap();
+        let user = GooseUser::new(0, Some(base_url), &configuration, 0).unwrap();
 
         // Confirm the URLs are correctly built using the default_host that includes a path.
         let url = user.build_url("foo").unwrap();
@@ -3306,8 +3316,11 @@ mod tests {
         };
 
         let configuration = GooseConfiguration::parse_args_default(&EMPTY_ARGS).unwrap();
-        let mut user =
-            GooseUser::single("http://localhost:8080".parse().unwrap(), &configuration).unwrap();
+        let mut user = GooseUser::single(
+            Some(Url::parse("http://localhost:8080").unwrap()),
+            &configuration,
+        )
+        .unwrap();
 
         user.set_session_data(session_data.clone());
 
@@ -3331,8 +3344,11 @@ mod tests {
         };
 
         let configuration = GooseConfiguration::parse_args_default(&EMPTY_ARGS).unwrap();
-        let mut user =
-            GooseUser::single("http://localhost:8080".parse().unwrap(), &configuration).unwrap();
+        let mut user = GooseUser::single(
+            Some(Url::parse("http://localhost:8080").unwrap()),
+            &configuration,
+        )
+        .unwrap();
 
         user.set_session_data(session_data);
 
@@ -3361,8 +3377,11 @@ mod tests {
         };
 
         let configuration = GooseConfiguration::parse_args_default(&EMPTY_ARGS).unwrap();
-        let mut user =
-            GooseUser::single("http://localhost:8080".parse().unwrap(), &configuration).unwrap();
+        let mut user = GooseUser::single(
+            Some(Url::parse("http://localhost:8080").unwrap()),
+            &configuration,
+        )
+        .unwrap();
 
         user.set_session_data(session_data.clone());
 
