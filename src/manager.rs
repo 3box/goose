@@ -25,7 +25,7 @@ pub struct GooseUserInitializer {
     /// An index into the internal `GooseTest.scenarios` vector, indicating which Scenario is running.
     pub scenarios_index: usize,
     /// The base_url for this user thread.
-    pub base_url: String,
+    pub base_url: Option<String>,
     /// A local copy of the global GooseConfiguration.
     pub config: GooseConfiguration,
     /// Numerical identifier for worker.
@@ -516,7 +516,7 @@ pub(crate) async fn manager_main(mut goose_attack: GooseAttack) -> GooseAttack {
                             // Build a vector of GooseUser initializers for next worker.
                             users.push(GooseUserInitializer {
                                 scenarios_index: user.scenarios_index,
-                                base_url: user.base_url.read().await.to_string(),
+                                base_url: user.base_url.map(|url| url.to_string()),
                                 config: user.config.clone(),
                                 worker_id: workers.len(),
                             });

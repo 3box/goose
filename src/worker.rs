@@ -138,9 +138,18 @@ pub(crate) async fn worker_main(goose_attack: GooseAttack) -> GooseAttack {
         if worker_id == 0 {
             worker_id = initializer.worker_id;
         }
+        // If no host was specified in the initializer, use the host from the worker configuration.
         let user = GooseUser::new(
             initializer.scenarios_index,
-            Url::parse(&initializer.base_url).unwrap(),
+            Some(
+                Url::parse(
+                    initializer
+                        .base_url
+                        .as_ref()
+                        .unwrap_or(&goose_attack.configuration.host),
+                )
+                .unwrap(),
+            ),
             &initializer.config,
             goose_attack.metrics.hash,
         )
