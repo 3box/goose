@@ -1130,8 +1130,12 @@ impl GooseUser {
             }
         }
 
-        // Otherwise use the `base_url`.
-        Ok(self.base_url.as_ref().unwrap().join(path)?.to_string())
+        // Otherwise use the `base_url` after checking that it isn't unspecified.
+        Ok(self
+            .base_url
+            .as_ref()
+            .ok_or(url::ParseError::EmptyHost)?
+            .to_string())
     }
 
     /// A helper to make a `GET` request of a path and collect relevant metrics.
