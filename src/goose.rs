@@ -1135,6 +1135,7 @@ impl GooseUser {
             .base_url
             .as_ref()
             .ok_or(url::ParseError::EmptyHost)?
+            .join(path)?
             .to_string())
     }
 
