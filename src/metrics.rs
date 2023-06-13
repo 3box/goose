@@ -547,24 +547,23 @@ impl Digest {
         self.digest = self.digest.merge_sorted(vec![time_elapsed as f64]);
     }
 
-    pub(crate) fn total_time(&self) -> usize {
+    pub fn total_time(&self) -> usize {
         self.digest.sum() as usize
     }
     pub fn count(&self) -> usize {
         self.digest.count() as usize
     }
-    pub(crate) fn min(&self) -> usize {
+    pub fn min(&self) -> usize {
         self.digest.min() as usize
     }
-    pub(crate) fn max(&self) -> usize {
+    pub fn max(&self) -> usize {
         self.digest.max() as usize
     }
-    pub(crate) fn mean(&self) -> f32 {
+    pub fn mean(&self) -> f32 {
         self.digest.mean() as f32
     }
-    // TODO use f64
-    pub(crate) fn quantile(&self, q: f64) -> usize {
-        self.digest.estimate_quantile(q) as usize
+    pub fn quantile(&self, q: f64) -> f64 {
+        self.digest.estimate_quantile(q)
     }
 }
 
@@ -1385,7 +1384,7 @@ impl GooseMetrics {
                     average,
                     format_number(transaction.times.min()),
                     format_number(transaction.times.max()),
-                    format_number(transaction.times.quantile(0.5)),
+                    format_number(transaction.times.quantile(0.5) as usize),
                     avg_precision = average_precision,
                 )?;
             }
@@ -1411,7 +1410,7 @@ impl GooseMetrics {
                 average,
                 format_number(aggregate_min_transaction_time),
                 format_number(aggregate_max_transaction_time),
-                format_number(aggregate_transaction_times.quantile(0.5)),
+                format_number(aggregate_transaction_times.quantile(0.5) as usize),
                 avg_precision = average_precision,
             )?;
         }
@@ -1550,7 +1549,7 @@ impl GooseMetrics {
                 average,
                 format_number(scenario.times.min()),
                 format_number(scenario.times.max()),
-                format_number(scenario.times.quantile(0.5)),
+                format_number(scenario.times.quantile(0.5) as usize),
                 avg_precision = average_precision,
             )?;
         }
@@ -1572,7 +1571,7 @@ impl GooseMetrics {
                 average,
                 format_number(aggregate_min_scenario_time),
                 format_number(aggregate_max_scenario_time),
-                format_number(aggregate_scenario_times.quantile(0.5)),
+                format_number(aggregate_scenario_times.quantile(0.5) as usize),
                 avg_precision = average_precision,
             )?;
         }
@@ -1642,7 +1641,7 @@ impl GooseMetrics {
                 raw_average,
                 format_number(request.raw_data.times.min()),
                 format_number(request.raw_data.times.max()),
-                format_number(request.raw_data.times.quantile(0.5)),
+                format_number(request.raw_data.times.quantile(0.5) as usize),
                 raw_avg_precision = raw_average_precision,
             )?;
         }
@@ -1666,7 +1665,7 @@ impl GooseMetrics {
                 raw_average,
                 format_number(aggregate_raw_min_time),
                 format_number(aggregate_raw_max_time),
-                format_number(aggregate_raw_times.quantile(0.5)),
+                format_number(aggregate_raw_times.quantile(0.5) as usize),
                 avg_precision = raw_average_precision,
             )?;
         }
@@ -1736,7 +1735,7 @@ impl GooseMetrics {
                     co_average,
                     standard_deviation,
                     format_number(co_maximum),
-                    format_number(co_data.times.quantile(0.5)),
+                    format_number(co_data.times.quantile(0.5) as usize),
                     co_avg_precision = co_average_precision,
                     sd_precision = standard_deviation_precision,
                 )?;
@@ -1775,7 +1774,7 @@ impl GooseMetrics {
                 co_average,
                 standard_deviation,
                 format_number(aggregate_co_max_time),
-                format_number(aggregate_co_times.quantile(0.5)),
+                format_number(aggregate_co_times.quantile(0.5) as usize),
                 avg_precision = co_average_precision,
                 sd_precision = standard_deviation_precision,
             )?;
@@ -3307,7 +3306,7 @@ pub(crate) fn update_max_time(mut global_max: usize, max: usize) -> usize {
 
 /// Get the response time that a certain number of percent of the requests finished within.
 pub(crate) fn calculate_response_time_percentile(response_times: &Digest, q: f64) -> String {
-    format_number(response_times.quantile(q))
+    format_number(response_times.quantile(q) as usize)
 }
 
 /// Helper to count and aggregate seen status codes.
@@ -3383,7 +3382,7 @@ mod test {
         local_response_times.record_time(2);
         local_response_times.record_time(2);
         global_response_times = global_response_times.merge(local_response_times.clone());
-        assert_eq!(global_response_times.quantile(0.5), 2);
+        assert_eq!(global_response_times.quantile(0.5) as usize, 2);
     }
 
     #[test]
@@ -3587,7 +3586,7 @@ mod test {
         // Tracking another response time updates all related fields.
         request.record_time(10, false);
         // We've seen [1ms, 10ms, 10ms] the median should be 10ms
-        assert_eq!(request.raw_data.times.quantile(0.5), 10);
+        assert_eq!(request.raw_data.times.quantile(0.5) as usize, 10);
         // Minimum doesn't change.
         assert_eq!(request.raw_data.times.min(), 1);
         // Maximum doesn't change.
@@ -3600,7 +3599,7 @@ mod test {
         // Tracking another response time updates all related fields.
         request.record_time(101, false);
         // We've seen [1ms, 10ms, 10ms, 101ms] the median should be 10ms
-        assert_eq!(request.raw_data.times.quantile(0.5), 10);
+        assert_eq!(request.raw_data.times.quantile(0.5) as usize, 10);
         // Minimum doesn't change.
         assert_eq!(request.raw_data.times.min(), 1);
         // Maximum increases to actual maximum, not rounded maximum.
@@ -3613,7 +3612,7 @@ mod test {
         // Tracking another response time updates all related fields.
         request.record_time(102, false);
         // We've seen [1ms, 10ms, 10ms, 101ms, 102ms] the 75th should be 102ms
-        assert_eq!(request.raw_data.times.quantile(0.75), 102);
+        assert_eq!(request.raw_data.times.quantile(0.75) as usize, 102);
         // Minimum doesn't change.
         assert_eq!(request.raw_data.times.min(), 1);
         // Maximum increases to actual maximum, not rounded maximum.
@@ -3626,7 +3625,7 @@ mod test {
         // Tracking another response time updates all related fields.
         request.record_time(155, false);
         // We've seen [1ms, 10ms, 10ms, 101ms, 102ms, 155ms] the 75th should be 102ms
-        assert_eq!(request.raw_data.times.quantile(0.75), 102);
+        assert_eq!(request.raw_data.times.quantile(0.75) as usize, 102);
         // Minimum doesn't change.
         assert_eq!(request.raw_data.times.min(), 1);
         // Maximum increases to actual maximum, not rounded maximum.
@@ -3639,7 +3638,7 @@ mod test {
         // Tracking another response time updates all related fields.
         request.record_time(2345, false);
         // We've seen [1ms, 10ms, 10ms, 101ms, 102ms, 155ms, 2345ms] the 75th should be 102ms
-        assert_eq!(request.raw_data.times.quantile(0.75), 102);
+        assert_eq!(request.raw_data.times.quantile(0.75) as usize, 102);
         // Minimum doesn't change.
         assert_eq!(request.raw_data.times.min(), 1);
         // Maximum increases to actual maximum, not rounded maximum.
@@ -3652,7 +3651,7 @@ mod test {
         // Tracking another response time updates all related fields.
         request.record_time(987654321, false);
         // We've seen [1ms, 10ms, 10ms, 101ms, 102ms, 155ms, 2345ms, 988764321ms] the 75th should be 102ms
-        assert_eq!(request.raw_data.times.quantile(0.75), 155);
+        assert_eq!(request.raw_data.times.quantile(0.75) as usize, 155);
         // Minimum doesn't change.
         assert_eq!(request.raw_data.times.min(), 1);
         // Maximum increases to actual maximum, not rounded maximum.
