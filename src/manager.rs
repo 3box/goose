@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::io::BufWriter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time;
-use tdigest::TDigest;
 
 use crate::metrics::{
     self, GooseErrorMetricAggregate, GooseErrorMetrics, GooseRequestMetricAggregate,
@@ -76,18 +75,9 @@ fn merge_transactions_from_worker(
     // Make a mutable copy where we can merge things
     let mut merged_transaction = parent_transaction.clone();
     // Iterate over user times, and merge into global time
-    merged_transaction.times =
-        metrics::merge_times(merged_transaction.times, user_transaction.times.clone());
-    // Increment total transaction time counter.
-    merged_transaction.total_time += &user_transaction.total_time;
-    // Increment count of how many transaction counters we've seen.
-    merged_transaction.counter += &user_transaction.counter;
-    // If user had new fastest transaction time, update global fastest transaction time.
-    merged_transaction.min_time =
-        metrics::update_min_time(merged_transaction.min_time, user_transaction.min_time);
-    // If user had new slowest transaction time, update global slowest transaction time.
-    merged_transaction.max_time =
-        metrics::update_max_time(merged_transaction.max_time, user_transaction.max_time);
+    merged_transaction.times = merged_transaction
+        .times
+        .merge(user_transaction.times.clone());
     // Increment total success counter.
     merged_transaction.success_count += &user_transaction.success_count;
     // Increment total fail counter.
@@ -103,18 +93,7 @@ fn merge_scenarios_from_worker(
     // Make a mutable copy where we can merge things
     let mut merged_scenario = parent_scenario.clone();
     // Iterate over user times, and merge into global time
-    merged_scenario.times =
-        metrics::merge_times(merged_scenario.times, user_scenario.times.clone());
-    // Increment total scenario time counter.
-    merged_scenario.total_time += &user_scenario.total_time;
-    // Increment count of how many scenario counters we've seen.
-    merged_scenario.counter += &user_scenario.counter;
-    // If user had new fastest scenario time, update global fastest scenario time.
-    merged_scenario.min_time =
-        metrics::update_min_time(merged_scenario.min_time, user_scenario.min_time);
-    // If user had new slowest scenario time, update global slowest scenario time.
-    merged_scenario.max_time =
-        metrics::update_max_time(merged_scenario.max_time, user_scenario.max_time);
+    merged_scenario.times = merged_scenario.times.merge(user_scenario.times.clone());
     merged_scenario
 }
 
@@ -127,10 +106,10 @@ fn merge_requests_from_worker(
     // Make a mutable copy where we can merge things
     let mut merged_request = parent_request.clone();
     // Iterate over user response times, and merge into global response time
-    merged_request.raw_data.histogram = TDigest::merge_digests(vec![
-        merged_request.raw_data.histogram,
-        user_request.raw_data.histogram.clone(),
-    ]);
+    merged_request.raw_data.times = merged_request
+        .raw_data
+        .times
+        .merge(user_request.raw_data.times.clone());
     // Increment total success counter.
     merged_request.success_count += &user_request.success_count;
     // Increment total fail counter.
